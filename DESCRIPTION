@@ -21,7 +21,7 @@ Description: Pipe-friendly tools for the quantitative study of biological
     and 'sf' point layers are accepted, distances and likelihoods are
     computed in base R, and results are returned as tibbles.
 License: MIT + file LICENSE
-URL: https://github.com/jmozez/tidyinvasion
+URL: https://tidyinvasion.in4metrix.dev/, https://github.com/jmozez/tidyinvasion
 BugReports: https://github.com/jmozez/tidyinvasion/issues
 Depends: 
     R (>= 4.1.0)
