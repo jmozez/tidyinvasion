@@ -8,3 +8,8 @@
 ^tidyinvasion\.Rcheck$
 ^tidyinvasion.*\.tar\.gz$
 ^README\.html$
+^_pkgdown\.yml$
+^docs$
+^pkgdown$
+^vercel\.json$
+^\.vercelignore$
