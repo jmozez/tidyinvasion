@@ -1,0 +1,10 @@
+.Rproj.user
+.Rhistory
+.RData
+.Rdata
+.httr-oauth
+.DS_Store
+tidyinvasion.Rcheck/
+tidyinvasion_*.tar.gz
+README.html
+data-raw/cache/
