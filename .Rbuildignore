@@ -1,0 +1,10 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^LICENSE\.md$
+^data-raw$
+^README\.Rmd$
+^\.github$
+^\.lintr$
+^tidyinvasion\.Rcheck$
+^tidyinvasion.*\.tar\.gz$
+^README\.html$

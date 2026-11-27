@@ -1,0 +1,181 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%",
+  dpi = 120
+)
+```
+
+# tidyinvasion
+
+<!-- badges: start -->
+[![R-CMD-check](https://github.com/jmozez/tidyinvasion/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/jmozez/tidyinvasion/actions/workflows/R-CMD-check.yaml)
+[![lint](https://github.com/jmozez/tidyinvasion/actions/workflows/lint.yaml/badge.svg)](https://github.com/jmozez/tidyinvasion/actions/workflows/lint.yaml)
+[![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/jmozez/tidyinvasion/blob/main/LICENSE.md)
+<!-- badges: end -->
+
+tidyinvasion brings the quantitative toolkit of invasion biology into the
+tidyverse and tidymodels. It follows an invasion from introduction to
+impact:
+
+| Stage | Functions |
+|---|---|
+| Data classes | `inv_occurrence()`, `inv_pathway()`, `inv_as_sf()`, `cbd_pathways()` |
+| Introduction | `inv_propagule_pressure()`, `inv_establishment_prob()`, `inv_detection_prob()` |
+| Spread | `inv_distance()`, `inv_spread_rate()`, `inv_dispersal_kernel()`, `inv_lag_phase()` |
+| Impact | `inv_impact_metrics()`, `inv_parker_impact()`, `inv_homogenization()`, `inv_eicat_score()` |
+| Biosecurity | `inv_eradication_feasibility()`, `inv_horizon_scan()` |
+| recipes | `step_inv_background()`, `step_inv_propagule_lags()`, `step_inv_env_distance()` |
+| rsample | `inv_spatial_block_cv()`, `inv_temporal_transfer_cv()` |
+| yardstick | `boyce_index()` (Continuous Boyce Index), `tss()` (True Skill Statistic) |
+| parsnip | `inv_sdm()` (engines `"glm"`, `"iwlr"`), `inv_reaction_diffusion()` (engine `"skellam"`) |
+| broom and ggplot2 | `tidy()`, `glance()`, `augment()` and `autoplot()` methods |
+
+Every function takes a data frame first, so it works with the native pipe,
+and selects columns with tidy evaluation. Results are tibbles. Distances
+(haversine or Euclidean) and maximum-likelihood fits are written in base R,
+so the package needs no compiled spatial libraries; `sf` point layers are
+accepted when sf is installed.
+
+## Installation
+
+Install the development version from GitHub:
+
+```r
+# install.packages("pak")
+pak::pak("jmozez/tidyinvasion")
+```
+
+## Example: the cane toad invasion of Australia
+
+`cane_toad` holds real, openly licensed GBIF records of the cane toad
+(*Rhinella marina*), released at Gordonvale, Queensland, in 1935.
+
+```{r occ}
+library(tidyinvasion)
+
+toads <- inv_occurrence(cane_toad, lon = lon, lat = lat, time = year,
+  species = species)
+toads
+```
+
+How fast has the range front advanced? The 95th percentile of distances
+from Gordonvale limits the effect of stray records:
+
+```{r spread}
+spread <- inv_spread_rate(toads, origin = c(145.79, -17.10), quantile = 0.95)
+glance(spread)
+```
+
+```{r spread-plot, fig.height = 3.5}
+autoplot(spread)
+```
+
+Was there a lag phase before the expansion?
+
+```{r lag}
+inv_lag_phase(toads) |> glance()
+```
+
+## Example: introduction and establishment
+
+```{r estab}
+fit <- inv_establishment_prob(inv_introductions, established, propagule_size,
+  model = "weibull")
+tidy(fit)
+
+inv_detection_prob(inv_surveys, surveys = starts_with("visit"), .by = habitat)
+```
+
+## Example: a tidymodels species distribution model
+
+Environmental novelty of each point relative to the conditions at known
+presences, from a recipes step:
+
+```{r sdm-recipe, message = FALSE}
+library(recipes)
+library(parsnip)
+
+rec <- recipe(presence ~ temp + rain + forest, data = inv_sdm_data) |>
+  step_inv_env_distance(temp, rain, forest, presence = presence)
+
+bake(prep(rec), new_data = NULL) |>
+  dplyr::summarise(
+    mean_mahalanobis = mean(env_mahalanobis),
+    share_novel = mean(env_mess < 0),
+    .by = presence
+  )
+```
+
+A quadratic SDM assessed with spatial block cross-validation, the
+Continuous Boyce Index and the True Skill Statistic:
+
+```{r sdm}
+spec <- inv_sdm(degree = 2) |> set_engine("glm")
+
+set.seed(1)
+folds <- inv_spatial_block_cv(inv_sdm_data, lon = lon, lat = lat, v = 5,
+  block_size = 1.5)
+
+scores <- lapply(folds$splits, function(split) {
+  train <- rsample::analysis(split)
+  test <- rsample::assessment(split)
+  fitted <- fit(spec, presence ~ temp + rain + forest, data = train)
+  preds <- dplyr::bind_cols(test, predict(fitted, test, type = "prob"),
+    predict(fitted, test))
+  dplyr::bind_rows(
+    boyce_index(preds, presence, .pred_presence),
+    tss(preds, presence, .pred_class)
+  )
+})
+dplyr::bind_rows(scores) |>
+  dplyr::summarise(mean = mean(.estimate, na.rm = TRUE), .by = .metric)
+```
+
+## Data
+
+| Dataset | Content | Source |
+|---|---|---|
+| `cane_toad` | `r nrow(cane_toad)` thinned records of *Rhinella marina* in Australia, `r min(cane_toad$year)` to `r max(cane_toad$year)` | Real. GBIF occurrence API, CC0 1.0 and CC BY 4.0 records only |
+| `cane_toad_sources` | The `r nrow(cane_toad_sources)` GBIF datasets behind `cane_toad`, with licence and record counts | GBIF dataset API |
+| `inv_introductions` | Introduction events by CBD pathway with propagule size and outcome | Simulated |
+| `inv_surveys` | Repeat detection surveys at 150 sites | Simulated |
+| `inv_dispersal` | Dispersal distances for two placeholder species | Simulated |
+| `inv_plots` | Native richness and cover in invaded and uninvaded plots | Simulated |
+| `inv_communities` | Native and alien species lists for 36 sites in three regions | Simulated |
+| `inv_impacts` | EICAT-style impact records for placeholder taxa | Simulated |
+| `inv_horizon` | Horizon scanning scores from four assessors | Simulated |
+| `inv_sdm_data` | Presence and background points of a virtual species | Simulated |
+
+Simulated datasets use placeholder taxon codes so they cannot be mistaken
+for real assessments. `data-raw/make_data.R` documents how each one was
+made. When you use `cane_toad`, please cite GBIF and credit the datasets in
+`cane_toad_sources`.
+
+## A family of packages
+
+tidyinvasion works alongside the author's other tidy packages, all
+optional:
+
+* [tidymapr](https://tidymapr.in4metrix.dev) is the spatial companion.
+  It maps tidyinvasion's spatial outputs, such as `<inv_occurrence>`
+  records, spread fronts and SDM predictions, with basemaps, projections
+  and remote sensing layers.
+* [tidyvisor](https://github.com/jmozez/tidyvisor) is the advisor that
+  suggests which analysis fits a question and data set.
+* [tidydiversity](https://github.com/jmozez/tidydiversity) estimates
+  diversity of the invaded communities, and tidyepidemio covers the
+  epidemiology of invasive pathogens.
+
+## Licence
+
+MIT © Jimmy Moses
